@@ -618,7 +618,62 @@ class LinkedInPeopleConnectionBot:
             print(f"Error navigating to next page: {str(e)}")
             return False
 
+    # Add this method to the LinkedInPeopleConnectionBot class (after go_to_next_page method)
 
+    def run_automation(self, max_pages=100):
+        """Run the full automation process."""
+        page_num = 1
+
+        while page_num <= max_pages:
+            print(f"\nProcessing page {page_num}")
+
+            # Check for invitation limit warning before starting the page
+            if not self.check_invitation_limit_warning():
+                print("Stopping automation due to invitation limit detection.")
+                break
+
+            # Process Connect buttons
+            if not self.process_page():
+                print("Automation stopped due to invitation limit or user choice.")
+                break
+
+            # Process Follow buttons
+            if not self.click_follow_buttons():
+                print("Automation stopped due to invitation limit or user choice.")
+                break
+
+            # Try to go to next page
+            if not self.go_to_next_page():
+                print("Reached the last page or encountered an error")
+                break
+
+            page_num += 1
+
+            # Random delay between pages
+            time.sleep(random.uniform(3, 5))
+
+        print(f"Completed automation! Processed {page_num} pages.")
+
+# Update the main block in the file:
+if __name__ == "__main__":
+    # Parse command line arguments
+    args = parse_arguments()
+
+    # To use with an already opened browser, set use_existing_browser=True
+    # Pass the auto_continue flag from command line arguments
+    automator = LinkedInPeopleConnectionBot(use_existing_browser=True, auto_continue=args.yes, message_file=args.message)
+
+    try:
+        # Run the automation
+        automator.run_automation(max_pages=100)
+    except KeyboardInterrupt:
+        print("\nAutomation stopped by user")
+    except Exception as e:
+        print(f"\nAutomation stopped due to error: {str(e)}")
+    finally:
+        # Don't close the browser if we're using an existing one
+        if not automator.use_existing_browser:
+            automator.close()
 
     def close(self):
         """Close the browser."""
