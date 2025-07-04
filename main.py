@@ -205,6 +205,91 @@ class LinkedInPeopleConnectionBot:
             print(f"Error extracting name from modal: {str(e)}")
             return None
 
+    def check_invitation_limit_warning(self):
+        """Check if the invitation limit warning is displayed and ask user what to do."""
+        try:
+            # First check for the HARD LIMIT reached dialog - always stop for this
+            hard_limit_elements = self.driver.find_elements(
+                By.XPATH,
+                "//h2[contains(text(), 'reached the weekly invitation limit')] | " +
+                "//h2[@id='ip-fuse-limit-alert__header' and contains(text(), 'reached the weekly')] | " +
+                "//div[contains(@class, 'ip-fuse-limit-alert')]//h2[contains(text(), 'reached')]"
+            )
+
+            if hard_limit_elements:
+                print("\n" + "="*50)
+                print("CRITICAL: You've reached the weekly invitation limit! Stopping automation.")
+                print("="*50)
+
+                # Click the "Got it" button to dismiss the warning
+                try:
+                    got_it_button = self.driver.find_element(
+                        By.XPATH,
+                        "//button[.//span[text()='Got it']] | " +
+                        "//button[contains(@class, 'ip-fuse-limit-alert__primary-action')]"
+                    )
+                    self.driver.execute_script("arguments[0].click();", got_it_button)
+                except:
+                    # Try to dismiss the dialog if the "Got it" button can't be found
+                    try:
+                        dismiss_button = self.driver.find_element(
+                            By.XPATH,
+                            "//button[@aria-label='Dismiss']"
+                        )
+                        self.driver.execute_script("arguments[0].click();", dismiss_button)
+                    except:
+                        pass
+
+                return False  # Always stop when hard limit is reached
+
+            # Then check for the "close to" warning
+            warning_elements = self.driver.find_elements(
+                By.XPATH,
+                "//h2[contains(text(), 'close to the weekly invitation limit')] | " +
+                "//div[contains(@class, 'ip-fuse-limit-alert')]//h2[contains(text(), 'close to')]"
+            )
+
+            if warning_elements:
+                print("\n" + "="*50)
+                print("WARNING: You're close to the weekly invitation limit!")
+                print("="*50)
+
+                if self.auto_continue:
+                    print("Auto-continue enabled (-y flag). Automatically continuing past the warning.")
+                    # Click the "Got it" button to dismiss the warning
+                    got_it_button = self.driver.find_element(
+                        By.XPATH,
+                        "//button[.//span[text()='Got it']] | " +
+                        "//button[contains(@class, 'ip-fuse-limit-alert__primary-action')]"
+                    )
+                    self.driver.execute_script("arguments[0].click();", got_it_button)
+                    time.sleep(1)
+                    return True
+                else:
+                    # Ask the user what they want to do
+                    user_decision = input("\nDo you want to continue and use some of your remaining invites? (y/N): ").strip().lower()
+
+                    # Changed this part: Make stop the default action, only continue if user explicitly says "y" or "yes"
+                    if user_decision in ["yes", "y"]:
+                        print("Continuing automation until all invites are used.")
+                        # Click the "Got it" button to dismiss the warning
+                        got_it_button = self.driver.find_element(
+                            By.XPATH,
+                            "//button[.//span[text()='Got it']] | " +
+                            "//button[contains(@class, 'ip-fuse-limit-alert__primary-action')]"
+                        )
+                        self.driver.execute_script("arguments[0].click();", got_it_button)
+                        time.sleep(1)
+                        return True
+                    else:
+                        print("Stopping automation to save some invites for manual use.")
+                        return False
+
+            return True  # No warning found, continue
+        except Exception as e:
+            print(f"Error checking invitation limit: {str(e)}")
+            return True  # Continue if there was an error checking
+
     def close(self):
         """Close the browser."""
         self.driver.quit()
