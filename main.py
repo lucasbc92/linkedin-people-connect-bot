@@ -345,6 +345,196 @@ class LinkedInPeopleConnectionBot:
             print(f"Error verifying invitation: {str(e)}")
             return False  # Assume failure on error
 
+    # Add this method to the LinkedInPeopleConnectionBot class (after verify_successful_invitation_sent method)
+
+    def process_page(self):
+        """Process all valid connect buttons on the current page."""
+        # Wait for the search results container to load
+        try:
+            self.wait.until(EC.presence_of_element_located((By.CLASS_NAME, "search-results-container")))
+        except:
+            print("Could not find search-results-container, trying to continue anyway")
+
+        # Find all buttons on the page
+        buttons = self.driver.find_elements(By.TAG_NAME, "button")
+
+        connect_buttons = []
+
+        # Filter for Connect buttons only
+        for button in buttons:
+            try:
+                button_text = button.text.strip()
+                if button_text == "Connect":
+                    connect_buttons.append(button)
+            except:
+                continue
+
+        print(f"Found {len(connect_buttons)} Connect buttons on this page")
+
+        # Process each Connect button
+        for i, button in enumerate(connect_buttons):
+            try:
+                # Check for invitation limit warning before processing each button
+                if not self.check_invitation_limit_warning():
+                    print("Stopping automation due to invitation limit or user choice.")
+                    return False  # Signal to stop the automation
+
+                # Scroll to the button
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", button)
+                time.sleep(random.uniform(1, 2))  # Random delay to appear more human-like
+
+                # Check if it's still a Connect button (might have changed during iteration)
+                if button.text.strip() != "Connect":
+                    continue
+
+                # Try to extract name before clicking
+                name = self.extract_name_from_profile(button)
+
+                # Click the Connect button using JavaScript to avoid intercepted clicks
+                self.driver.execute_script("arguments[0].click();", button)
+
+                # Wait for the modal to appear
+                try:
+                    self.wait.until(EC.presence_of_element_located((By.ID, "send-invite-modal")))
+                except:
+                    # If the standard ID doesn't work, try a more generic approach
+                    try:
+                        self.wait.until(EC.presence_of_element_located(
+                            (By.XPATH, "//div[contains(@class, 'artdeco-modal')]")))
+                    except:
+                        # If no modal appears, check if we hit the limit
+                        if not self.check_invitation_limit_warning():
+                            return False
+                        print(f"No modal appeared when clicking Connect button {i+1}. Skipping.")
+                        continue
+
+                # Check again for limit reached after clicking connect
+                if not self.check_invitation_limit_warning():
+                    print("Stopping automation due to invitation limit.")
+                    return False
+
+                # If name wasn't found before, try to extract it from the modal
+                if not name:
+                    name = self.extract_name_from_modal()
+
+                # Find and click "Add a note" button - using JavaScript click
+                try:
+                    add_note_btn = self.wait.until(EC.element_to_be_clickable(
+                        (By.XPATH, "//button[.//span[text()='Add a note']]")))
+                    self.driver.execute_script("arguments[0].click();", add_note_btn)
+                except:
+                    # If "Add a note" button doesn't appear, check for limit warning
+                    if not self.check_invitation_limit_warning():
+                        return False
+                    print(f"No 'Add a note' button found for button {i+1}. Skipping.")
+                    continue
+
+                # Wait for the text area to be visible
+                try:
+                    message_box = self.wait.until(EC.element_to_be_clickable((By.ID, "custom-message")))
+                except:
+                    # If no message box appears, check if we hit the limit
+                    if not self.check_invitation_limit_warning():
+                        return False
+                    print(f"No message box appeared for button {i+1}. Skipping.")
+                    continue
+
+                # Prepare personalized message
+                personalized_message = self.personalize_message(name)
+
+                # Debug output to verify message preparation
+                print(f"Sending message to candidate {i+1}: {personalized_message[:50]}{'...' if len(personalized_message) > 50 else ''}")
+
+                # Clear and fill the message box - using JS to avoid character issues
+                message_box.clear()
+
+                # Use JavaScript to set the value to avoid BMP character issues
+                self.driver.execute_script(
+                    "arguments[0].value = arguments[1];",
+                    message_box,
+                    personalized_message
+                )
+
+                # Trigger an input event to ensure LinkedIn recognizes the text entry
+                self.driver.execute_script(
+                    "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));",
+                    message_box
+                )
+
+                # Wait a moment for the Send button to be enabled
+                time.sleep(2)
+
+                # Find the Send button
+                try:
+                    send_btn = self.wait.until(EC.element_to_be_clickable(
+                        (By.XPATH, "//button[.//span[text()='Send']]")))
+                except:
+                    # If Send button doesn't become clickable, check for limit warning
+                    if not self.check_invitation_limit_warning():
+                        return False
+                    print(f"Send button never became clickable for button {i+1}. Skipping.")
+                    continue
+
+                # Click the Send button using JavaScript
+                self.driver.execute_script("arguments[0].click();", send_btn)
+
+                # Wait for the modal to close or for a limit message to appear
+                try:
+                    self.short_wait.until(EC.invisibility_of_element_located((By.ID, "send-invite-modal")))
+                except:
+                    # If the standard ID doesn't work, try a more generic approach
+                    try:
+                        self.short_wait.until(EC.invisibility_of_element_located(
+                            (By.XPATH, "//div[contains(@class, 'artdeco-modal')]")))
+                    except:
+                        # If modal doesn't close, check for limit warning
+                        if not self.check_invitation_limit_warning():
+                            return False
+                        print(f"Modal never closed for button {i+1}. Skipping.")
+                        continue
+
+                # Verify the invitation was actually sent successfully
+                if self.verify_successful_invitation_sent(button):
+                    print(f"Successfully sent invitation {i+1}/{len(connect_buttons)}")
+                else:
+                    # If verification fails, check for limit warning one more time
+                    if not self.check_invitation_limit_warning():
+                        return False
+                    print(f"Failed to send invitation {i+1}/{len(connect_buttons)} - possibly hit invitation limit")
+                    return False  # Stop automation if we can't verify success
+
+                # Random delay between invitations to appear more human-like
+                time.sleep(random.uniform(3, 5))
+
+            except ElementClickInterceptedException:
+                print(f"Button {i+1} was intercepted by another element")
+                # Check if it's the invitation limit warning
+                if not self.check_invitation_limit_warning():
+                    return False
+
+                # Try to close any other modal that might be open
+                try:
+                    close_buttons = self.driver.find_elements(By.XPATH, "//button[contains(@aria-label, 'Dismiss')]")
+                    if close_buttons:
+                        self.driver.execute_script("arguments[0].click();", close_buttons[0])
+                except:
+                    pass
+
+            except Exception as e:
+                print(f"Error processing button {i+1}: {str(e)}")
+                # Check if it's the invitation limit warning
+                if not self.check_invitation_limit_warning():
+                    return False
+
+                # Try to close any modal that might be open
+                try:
+                    close_button = self.driver.find_element(By.XPATH, "//button[contains(@aria-label, 'Dismiss')]")
+                    self.driver.execute_script("arguments[0].click();", close_button)
+                except:
+                    pass
+
+        return True  # Continue automation
+
     def close(self):
         """Close the browser."""
         self.driver.quit()
