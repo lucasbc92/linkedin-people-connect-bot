@@ -290,6 +290,61 @@ class LinkedInPeopleConnectionBot:
             print(f"Error checking invitation limit: {str(e)}")
             return True  # Continue if there was an error checking
 
+    # Add this method to the LinkedInPeopleConnectionBot class (after check_invitation_limit_warning method)
+
+    def verify_successful_invitation_sent(self, connect_button):
+        """Verify that the invitation was actually sent successfully."""
+        try:
+            # Check if any limit warning dialog appeared
+            if not self.check_invitation_limit_warning():
+                return False
+
+            # Check if the connect button changed to "Pending" or disappeared
+            try:
+                # Refresh the button's state
+                # Get current button text if it still exists
+                try:
+                    button_text = connect_button.text.strip()
+                    if button_text == "Pending":
+                        return True  # Successfully sent
+                    elif button_text == "Connect":
+                        print("WARNING: Button still shows 'Connect' - invitation may not have been sent")
+                        return False  # Not sent
+                except:
+                    # Button might be stale, look for a Pending button in its place
+                    parent_element = connect_button.find_element(By.XPATH, "..")
+                    pending_buttons = parent_element.find_elements(By.XPATH, ".//button[contains(text(), 'Pending')]")
+                    if pending_buttons:
+                        return True  # Successfully sent
+            except:
+                # Button is completely gone or stale, try looking for a success message
+                success_elements = self.driver.find_elements(
+                    By.XPATH,
+                    "//div[contains(text(), 'Invitation sent')] | " +
+                    "//span[contains(text(), 'Invitation sent')]"
+                )
+                if success_elements:
+                    return True  # Successfully sent
+
+            # Look for any error messages that indicate failure
+            error_elements = self.driver.find_elements(
+                By.XPATH,
+                "//div[contains(text(), 'unable to send')] | " +
+                "//div[contains(text(), 'invitation limit')] | " +
+                "//div[contains(text(), 'cannot send')] | " +
+                "//div[contains(@class, 'error')]"
+            )
+            if error_elements:
+                print("ERROR: Found error message indicating invitation was not sent")
+                return False  # Not sent
+
+            # If we can't definitively determine success or failure, assume failure to be safe
+            print("WARNING: Could not verify if invitation was sent. Assuming it failed.")
+            return False
+        except Exception as e:
+            print(f"Error verifying invitation: {str(e)}")
+            return False  # Assume failure on error
+
     def close(self):
         """Close the browser."""
         self.driver.quit()
