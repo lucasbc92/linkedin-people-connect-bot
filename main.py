@@ -535,6 +535,91 @@ class LinkedInPeopleConnectionBot:
 
         return True  # Continue automation
 
+    # Add these methods to the LinkedInPeopleConnectionBot class (after process_page method)
+
+    def click_follow_buttons(self):
+        """Click all Follow buttons on the page."""
+        follow_buttons = self.driver.find_elements(By.XPATH, "//button[.//span[text()='Follow']]")
+
+        for i, button in enumerate(follow_buttons):
+            try:
+                # Check for invitation limit warning before processing
+                if not self.check_invitation_limit_warning():
+                    return False
+
+                # Scroll to the button
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", button)
+                time.sleep(random.uniform(0.5, 1))
+
+                # Click the Follow button using JavaScript
+                self.driver.execute_script("arguments[0].click();", button)
+                print(f"Followed profile {i+1}/{len(follow_buttons)}")
+
+                # Short delay
+                time.sleep(random.uniform(1, 2))
+
+            except Exception as e:
+                print(f"Error following profile {i+1}: {str(e)}")
+
+        return True
+
+    def go_to_next_page(self):
+        """Go to the next page of search results. Returns False if no next page."""
+        try:
+            # Check for invitation limit warning before navigating
+            if not self.check_invitation_limit_warning():
+                return False
+
+            # Find the Next button
+            next_button = self.short_wait.until(EC.element_to_be_clickable(
+                (By.XPATH, "//button[contains(@aria-label, 'Next') and not(contains(@class, 'disabled'))]")))
+
+            # Check if we've reached page 100 (LinkedIn limit)
+            try:
+                current_page_elem = self.driver.find_element(By.XPATH, "//button[@aria-current='true']")
+                if current_page_elem.text == "100":
+                    print("Reached LinkedIn's page limit (page 100)")
+                    return False
+            except:
+                # If we can't find the current page element, just continue
+                pass
+
+            # Scroll to the Next button
+            self.driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
+            time.sleep(1)
+
+            # Store the current URL to check if we actually navigate
+            current_url = self.driver.current_url
+
+            # Click the Next button using JavaScript
+            self.driver.execute_script("arguments[0].click();", next_button)
+
+            # Wait for the page to load
+            time.sleep(5)
+
+            # Check if URL changed or if page content updated
+            if self.driver.current_url != current_url:
+                return True
+
+            # Additional check: try to find a loading indicator or wait for it to disappear
+            try:
+                loading_element = self.driver.find_element(By.XPATH, "//div[contains(@class, 'loading')]")
+                self.wait.until(EC.staleness_of(loading_element))
+            except:
+                # If no loading indicator found, just continue
+                pass
+
+            return True
+
+        except (TimeoutException, NoSuchElementException):
+            print("No next page button found or it's disabled")
+            return False
+        except Exception as e:
+            print(f"Error navigating to next page: {str(e)}")
+            return False
+
+
+
     def close(self):
         """Close the browser."""
         self.driver.quit()
