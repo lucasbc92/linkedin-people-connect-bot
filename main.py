@@ -63,8 +63,6 @@ class LinkedInPeopleConnectionBot:
             # If no name found, replace {name} with empty string
             return self.message_template.replace("{name}", "")
 
-    # Add these methods to the LinkedInPeopleConnectionBot class (after personalize_message method)
-
     def extract_name_from_profile(self, connect_button):
         """Extract name using the specific link structure provided."""
         try:
@@ -290,8 +288,6 @@ class LinkedInPeopleConnectionBot:
             print(f"Error checking invitation limit: {str(e)}")
             return True  # Continue if there was an error checking
 
-    # Add this method to the LinkedInPeopleConnectionBot class (after check_invitation_limit_warning method)
-
     def verify_successful_invitation_sent(self, connect_button):
         """Verify that the invitation was actually sent successfully."""
         try:
@@ -344,8 +340,6 @@ class LinkedInPeopleConnectionBot:
         except Exception as e:
             print(f"Error verifying invitation: {str(e)}")
             return False  # Assume failure on error
-
-    # Add this method to the LinkedInPeopleConnectionBot class (after verify_successful_invitation_sent method)
 
     def process_page(self):
         """Process all valid connect buttons on the current page."""
@@ -535,8 +529,6 @@ class LinkedInPeopleConnectionBot:
 
         return True  # Continue automation
 
-    # Add these methods to the LinkedInPeopleConnectionBot class (after process_page method)
-
     def click_follow_buttons(self):
         """Click all Follow buttons on the page."""
         follow_buttons = self.driver.find_elements(By.XPATH, "//button[.//span[text()='Follow']]")
@@ -618,8 +610,6 @@ class LinkedInPeopleConnectionBot:
             print(f"Error navigating to next page: {str(e)}")
             return False
 
-    # Add this method to the LinkedInPeopleConnectionBot class (after go_to_next_page method)
-
     def run_automation(self, max_pages=100):
         """Run the full automation process."""
         page_num = 1
@@ -654,27 +644,6 @@ class LinkedInPeopleConnectionBot:
 
         print(f"Completed automation! Processed {page_num} pages.")
 
-# Update the main block in the file:
-if __name__ == "__main__":
-    # Parse command line arguments
-    args = parse_arguments()
-
-    # To use with an already opened browser, set use_existing_browser=True
-    # Pass the auto_continue flag from command line arguments
-    automator = LinkedInPeopleConnectionBot(use_existing_browser=True, auto_continue=args.yes, message_file=args.message)
-
-    try:
-        # Run the automation
-        automator.run_automation(max_pages=100)
-    except KeyboardInterrupt:
-        print("\nAutomation stopped by user")
-    except Exception as e:
-        print(f"\nAutomation stopped due to error: {str(e)}")
-    finally:
-        # Don't close the browser if we're using an existing one
-        if not automator.use_existing_browser:
-            automator.close()
-
     def close(self):
         """Close the browser."""
         self.driver.quit()
@@ -700,8 +669,8 @@ if __name__ == "__main__":
     automator = LinkedInPeopleConnectionBot(use_existing_browser=True, auto_continue=args.yes, message_file=args.message)
 
     try:
-        print("LinkedIn People Connection Bot initialized successfully!")
-        print(f"Message template loaded: {automator.message_template[:50]}{'...' if len(automator.message_template) > 50 else ''}")
+        # Run the automation
+        automator.run_automation(max_pages=100)
     except KeyboardInterrupt:
         print("\nAutomation stopped by user")
     except Exception as e:
