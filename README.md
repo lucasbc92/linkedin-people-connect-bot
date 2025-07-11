@@ -6,9 +6,11 @@ A Python automation tool that helps you connect with people on LinkedIn by sendi
 
 - 🚀 **Automated Connection Requests**: Automatically sends connection requests to profiles with "Connect" buttons
 - 📝 **Personalized Messages**: Customizable message template with name extraction for personalization
+- 🏃‍♂️ **Quick Connection Mode**: Option to send connection requests without a note for faster processing
 - 🛡️ **Invitation Limit Protection**: Automatically detects and handles LinkedIn's invitation limits
 - 👥 **Follow Automation**: Also follows profiles that have "Follow" buttons
 - 🔄 **Multi-page Navigation**: Processes multiple pages of search results automatically
+- 🔙 **Bidirectional Navigation**: Can navigate both forward and backward through search results
 - 🎯 **Smart Targeting**: Works with LinkedIn search results to target specific profiles
 - ⚡ **Existing Browser Support**: Can work with your already-opened LinkedIn session
 
@@ -73,12 +75,17 @@ The script will open a new Chrome window where you'll need to manually log in an
 
 - `-y`, `--yes`: Automatically continue past "close to limit" warnings (will still stop at hard limit)
 - `-m`, `--message`: Path to message template file (default: message.txt)
+- `-r`, `--reverse`: Navigate in reverse (use Previous button instead of Next)
+- `-n`, `--no-message`: Send invitations without a note (faster processing)
 
 Examples:
 ```bash
 python main.py -y
 python main.py -m custom_message.txt
-python main.py -y -m my_template.txt
+python main.py -r  # Navigate in reverse (from newest to oldest search results)
+python main.py -n  # Send connection requests without a note
+python main.py -y -m my_template.txt -r
+python main.py -y -n -r  # Auto-continue, no notes, reverse navigation
 ```
 
 ## Message Customization
@@ -117,9 +124,11 @@ Espero que meu perfil desperte seu interesse!
 
 1. **Page Processing**: Scans the current page for "Connect" buttons
 2. **Name Extraction**: Attempts to extract the recipient's name from their profile
-3. **Connection Request**: Clicks "Connect" → "Add a note" → fills personalized message → sends
+3. **Connection Request**:
+   - With notes: Clicks "Connect" → "Add a note" → fills personalized message → sends
+   - Without notes: Clicks "Connect" → "Send without a note" (when `-n` flag is used)
 4. **Following**: Clicks any "Follow" buttons on the page
-5. **Navigation**: Moves to the next page of results
+5. **Navigation**: Moves to the next page (or previous page with `-r` flag) of results
 6. **Repeat**: Continues until all pages are processed or limits are reached
 
 ## Best Practices
@@ -135,17 +144,17 @@ Espero que meu perfil desperte seu interesse!
 ### Common Issues
 
 1. **ChromeDriver Issues**:
-    - Ensure Chrome browser is installed
-    - The script uses selenium's built-in ChromeDriver management
+   - Ensure Chrome browser is installed
+   - The script uses selenium's built-in ChromeDriver management
 
 2. **Connection Failures**:
-    - Check your internet connection
-    - Verify you're logged into LinkedIn
-    - Ensure the search results page is loaded
+   - Check your internet connection
+   - Verify you're logged into LinkedIn
+   - Ensure the search results page is loaded
 
 3. **Element Not Found**:
-    - LinkedIn's UI may have changed
-    - Try refreshing the page and running again
+   - LinkedIn's UI may have changed
+   - Try refreshing the page and running again
 
 ### Debug Mode
 

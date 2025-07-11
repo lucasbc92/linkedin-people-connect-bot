@@ -1,3 +1,6 @@
 Olá, {name}!
-Sou Full Stack Developer focado em backend com 5+ anos de experiência, sendo os últimos 3 anos em Java Spring & React. Apaixonado por café, simplificar problemas complexos e entregar soluções robustas.
-Espero que meu perfil desperte seu interesse!
+Sou um Dev Full Stack focado em back-end com experiência única: fintech (Luizalabs), agronegócio, segurança pública. Especialista em Java Spring, React e resolução de incidentes críticos.
+
+Que tal uma conversa?
+Atenciosamente,
+Lucas.

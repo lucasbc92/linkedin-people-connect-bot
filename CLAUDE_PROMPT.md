@@ -21,8 +21,11 @@ Now, this is an example of the **Connect button**:
 ### Step 1: Click Connect Button
 After clicking Connect, a window appears for you to choose if you want to add the person with or without a note. As I'm using LinkedIn premium, I can send many notes as I like, so I'll want to send a note to every recruiter.
 
-### Step 2: Click "Add a Note"
-So, after the window opens, click **"Add a note"** button, that is this one:
+### Step 2: Choose Note Option
+After the window opens, you have two options:
+
+#### Option A: Add a Note
+Click the **"Add a note"** button:
 
 ```html
 <button aria-label="Add a note" id="ember8896" class="artdeco-button artdeco-button--muted artdeco-button--2 artdeco-button--secondary ember-view mr1">
@@ -32,8 +35,19 @@ So, after the window opens, click **"Add a note"** button, that is this one:
 </button>
 ```
 
-### Step 3: Fill Message and Send
-Then, after clicking "Add a note", there's a text box where you write the message, then click Send to successfully send a connection invite with a note.
+#### Option B: Send Without a Note
+Alternatively, you can click **"Send without a note"** button for faster processing:
+
+```html
+<button aria-label="Send without a note" id="ember1556" class="artdeco-button artdeco-button--2 artdeco-button--primary ember-view ml1">
+    <span class="artdeco-button__text">
+        Send without a note
+    </span>
+</button>
+```
+
+### Step 3: Fill Message and Send (if adding a note)
+If you choose "Add a note", there's a text box where you write the message, then click Send to successfully send a connection invite with a note.
 
 #### Original Message Template
 I want you to paste the quoted message below into the text box:
@@ -88,10 +102,25 @@ You'll stop when you reach the last Connect button. There, you can hit the **"Ne
 </button>
 ```
 
+### Moving to Previous Page
+Alternatively, you can use the **"Previous"** button to navigate in reverse order. This is useful if you want to start from the most recent results and go backwards. The Previous button becomes disabled when you reach page 1.
+
+#### Previous Button HTML
+```html
+<button aria-label="Previous" id="ember402" class="artdeco-button artdeco-button--muted artdeco-button--1 artdeco-button--tertiary ember-view artdeco-pagination__button artdeco-pagination__button--previous" type="button">
+    <svg role="none" aria-hidden="true" class="artdeco-button__icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" data-supported-dps="16x16" data-test-icon="chevron-left-small" data-rtl="true">
+        <use href="#chevron-left-small" width="16" height="16"></use>
+    </svg>
+    <span class="artdeco-button__text">
+        Previous
+    </span>
+</button>
+```
+
 ## Final Request
 
-So, can you do this herculean labor to me? Use Selenium.
+So, can you do this herculean labor to me? Use Selenium. I want to be able to send connection requests with or without notes.
 
 ---
 
-**Note**: The original HTML sample data that was provided with this prompt is stored in a separate file (`linkedin_sample_html.html`) due to its size.
+**Note**: The original HTML sample data that was provided with this prompt is stored in a separate file (`search-results-container-example.html`) due to its size.

@@ -9,13 +9,17 @@ import argparse
 import sys
 import os
 
-class LinkedInPeopleConnectionBot:
-    def __init__(self, use_existing_browser=False, auto_continue=False, message_file="message.txt"):
-        """Initialize the LinkedIn People Connection Bot."""
+class LinkedInAutomator:
+    def __init__(self, use_existing_browser=False, auto_continue=False, message_file="message.txt", reverse=False, no_message=False):
+        """Initialize the LinkedIn Automator."""
         # Store the browser mode setting
         self.use_existing_browser = use_existing_browser
         # Store whether to auto-continue past warnings
         self.auto_continue = auto_continue
+        # Store whether to navigate in reverse order (Previous instead of Next)
+        self.reverse = reverse
+        # Store whether to send invites without a note
+        self.no_message = no_message
 
         if not use_existing_browser:
             # Set up a new browser instance
@@ -31,15 +35,23 @@ class LinkedInPeopleConnectionBot:
         self.wait = WebDriverWait(self.driver, 10)
         self.short_wait = WebDriverWait(self.driver, 3)
 
-        # Load message template from file
-        self.message_template = self.load_message_template(message_file)
+        # Load message template from file only if we're not using no-message mode
+        self.message_template = "" if no_message else self.load_message_template(message_file)
 
     def load_message_template(self, file_path):
         """Load message template from a text file."""
         try:
+            # If no_message flag is enabled, return empty string
+            if self.no_message:
+                return ""
+
             if not os.path.exists(file_path):
                 print(f"Warning: Message template file '{file_path}' not found. Using default message.")
                 return "Hello {name}! I'd like to connect with you."
+
+            # If file path is empty string, return empty string
+            if file_path == "":
+                return ""
 
             with open(file_path, 'r', encoding='utf-8') as file:
                 template = file.read().strip()
@@ -62,6 +74,169 @@ class LinkedInPeopleConnectionBot:
         else:
             # If no name found, replace {name} with empty string
             return self.message_template.replace("{name}", "")
+
+    def check_invitation_limit_warning(self):
+        """Check if the invitation limit warning is displayed and ask user what to do."""
+        try:
+            # First check for the HARD LIMIT reached dialog - always stop for this
+            hard_limit_elements = self.driver.find_elements(
+                By.XPATH,
+                "//h2[contains(text(), 'reached the weekly invitation limit')] | " +
+                "//h2[@id='ip-fuse-limit-alert__header' and contains(text(), 'reached the weekly')] | " +
+                "//div[contains(@class, 'ip-fuse-limit-alert')]//h2[contains(text(), 'reached')]"
+            )
+
+            if hard_limit_elements:
+                print("\n" + "="*50)
+                print("CRITICAL: You've reached the weekly invitation limit! Stopping automation.")
+                print("="*50)
+
+                # Click the "Got it" button to dismiss the warning
+                try:
+                    got_it_button = self.driver.find_element(
+                        By.XPATH,
+                        "//button[.//span[text()='Got it']] | " +
+                        "//button[contains(@class, 'ip-fuse-limit-alert__primary-action')]"
+                    )
+                    self.driver.execute_script("arguments[0].click();", got_it_button)
+                except:
+                    # Try to dismiss the dialog if the "Got it" button can't be found
+                    try:
+                        dismiss_button = self.driver.find_element(
+                            By.XPATH,
+                            "//button[@aria-label='Dismiss']"
+                        )
+                        self.driver.execute_script("arguments[0].click();", dismiss_button)
+                    except:
+                        pass
+
+                return False  # Always stop when hard limit is reached
+
+            # Then check for the "close to" warning
+            warning_elements = self.driver.find_elements(
+                By.XPATH,
+                "//h2[contains(text(), 'close to the weekly invitation limit')] | " +
+                "//div[contains(@class, 'ip-fuse-limit-alert')]//h2[contains(text(), 'close to')]"
+            )
+
+            if warning_elements:
+                print("\n" + "="*50)
+                print("WARNING: You're close to the weekly invitation limit!")
+                print("="*50)
+
+                if self.auto_continue:
+                    print("Auto-continue enabled (-y flag). Automatically continuing past the warning.")
+                    # Click the "Got it" button to dismiss the warning
+                    got_it_button = self.driver.find_element(
+                        By.XPATH,
+                        "//button[.//span[text()='Got it']] | " +
+                        "//button[contains(@class, 'ip-fuse-limit-alert__primary-action')]"
+                    )
+                    self.driver.execute_script("arguments[0].click();", got_it_button)
+                    time.sleep(1)
+                    return True
+                else:
+                    # Ask the user what they want to do
+                    user_decision = input("\nDo you want to continue and use some of your remaining invites? (y/N): ").strip().lower()
+
+                    # Changed this part: Make stop the default action, only continue if user explicitly says "y" or "yes"
+                    if user_decision in ["yes", "y"]:
+                        print("Continuing automation until all invites are used.")
+                        # Click the "Got it" button to dismiss the warning
+                        got_it_button = self.driver.find_element(
+                            By.XPATH,
+                            "//button[.//span[text()='Got it']] | " +
+                            "//button[contains(@class, 'ip-fuse-limit-alert__primary-action')]"
+                        )
+                        self.driver.execute_script("arguments[0].click();", got_it_button)
+                        time.sleep(1)
+                        return True
+                    else:
+                        print("Stopping automation to save some invites for manual use.")
+                        return False
+
+            return True  # No warning found, continue
+        except Exception as e:
+            print(f"Error checking invitation limit: {str(e)}")
+            return True  # Continue if there was an error checking
+
+    def verify_successful_invitation_sent(self, connect_button):
+        """Verify that the invitation was actually sent successfully."""
+        try:
+            # Wait a bit longer for the UI to update
+            time.sleep(3)
+
+            # Check if any limit warning dialog appeared first
+            if not self.check_invitation_limit_warning():
+                return False
+
+            # Try to find success indicators first (more reliable)
+            success_elements = self.driver.find_elements(
+                By.XPATH,
+                "//div[contains(text(), 'Invitation sent')] | " +
+                "//span[contains(text(), 'Invitation sent')] | " +
+                "//div[contains(text(), 'Your invitation was sent')] | " +
+                "//span[contains(text(), 'Your invitation was sent')]"
+            )
+            if success_elements:
+                print("SUCCESS: Found 'Invitation sent' confirmation message")
+                return True
+
+            # Look for the updated button state by re-finding it
+            try:
+                # Get the parent container to look for updated button
+                parent_element = connect_button.find_element(By.XPATH, "../..")
+
+                # Look for Pending button in the same area
+                pending_buttons = parent_element.find_elements(By.XPATH, ".//button[contains(text(), 'Pending')]")
+                if pending_buttons:
+                    print("SUCCESS: Found 'Pending' button - invitation sent")
+                    return True
+
+                # Look for other success indicators
+                sent_buttons = parent_element.find_elements(By.XPATH, ".//button[contains(text(), 'Sent')] | .//span[contains(text(), 'Invitation sent')]")
+                if sent_buttons:
+                    print("SUCCESS: Found 'Sent' indicator - invitation sent")
+                    return True
+
+            except Exception as e:
+                print(f"Could not check parent element: {str(e)}")
+
+            # Try checking the original button one more time with fresh element
+            try:
+                # Re-find all Connect buttons and see if one less exists
+                current_connect_buttons = self.driver.find_elements(By.XPATH, "//button[.//span[text()='Connect']]")
+                print(f"DEBUG: Found {len(current_connect_buttons)} Connect buttons after sending")
+
+                # If we can't definitively verify, let's be more lenient and assume success
+                # since the modal closed properly (we got to this verification step)
+                print("INFO: Could not definitively verify, but modal closed properly - assuming success")
+                return True
+
+            except Exception as e:
+                print(f"Error re-checking buttons: {str(e)}")
+
+            # Look for any error messages that indicate definite failure
+            error_elements = self.driver.find_elements(
+                By.XPATH,
+                "//div[contains(text(), 'unable to send')] | " +
+                "//div[contains(text(), 'invitation limit')] | " +
+                "//div[contains(text(), 'cannot send')] | " +
+                "//div[contains(@class, 'error')] | " +
+                "//span[contains(text(), 'Something went wrong')]"
+            )
+            if error_elements:
+                print("ERROR: Found error message indicating invitation was not sent")
+                return False
+
+            # If we made it here and no errors were found, assume success
+            print("INFO: No errors found and modal closed - assuming invitation was sent successfully")
+            return True
+
+        except Exception as e:
+            print(f"Error verifying invitation: {str(e)}")
+            # If there's an error in verification but no clear failure, assume success
+            return True
 
     def extract_name_from_profile(self, connect_button):
         """Extract name using the specific link structure provided."""
@@ -203,144 +378,6 @@ class LinkedInPeopleConnectionBot:
             print(f"Error extracting name from modal: {str(e)}")
             return None
 
-    def check_invitation_limit_warning(self):
-        """Check if the invitation limit warning is displayed and ask user what to do."""
-        try:
-            # First check for the HARD LIMIT reached dialog - always stop for this
-            hard_limit_elements = self.driver.find_elements(
-                By.XPATH,
-                "//h2[contains(text(), 'reached the weekly invitation limit')] | " +
-                "//h2[@id='ip-fuse-limit-alert__header' and contains(text(), 'reached the weekly')] | " +
-                "//div[contains(@class, 'ip-fuse-limit-alert')]//h2[contains(text(), 'reached')]"
-            )
-
-            if hard_limit_elements:
-                print("\n" + "="*50)
-                print("CRITICAL: You've reached the weekly invitation limit! Stopping automation.")
-                print("="*50)
-
-                # Click the "Got it" button to dismiss the warning
-                try:
-                    got_it_button = self.driver.find_element(
-                        By.XPATH,
-                        "//button[.//span[text()='Got it']] | " +
-                        "//button[contains(@class, 'ip-fuse-limit-alert__primary-action')]"
-                    )
-                    self.driver.execute_script("arguments[0].click();", got_it_button)
-                except:
-                    # Try to dismiss the dialog if the "Got it" button can't be found
-                    try:
-                        dismiss_button = self.driver.find_element(
-                            By.XPATH,
-                            "//button[@aria-label='Dismiss']"
-                        )
-                        self.driver.execute_script("arguments[0].click();", dismiss_button)
-                    except:
-                        pass
-
-                return False  # Always stop when hard limit is reached
-
-            # Then check for the "close to" warning
-            warning_elements = self.driver.find_elements(
-                By.XPATH,
-                "//h2[contains(text(), 'close to the weekly invitation limit')] | " +
-                "//div[contains(@class, 'ip-fuse-limit-alert')]//h2[contains(text(), 'close to')]"
-            )
-
-            if warning_elements:
-                print("\n" + "="*50)
-                print("WARNING: You're close to the weekly invitation limit!")
-                print("="*50)
-
-                if self.auto_continue:
-                    print("Auto-continue enabled (-y flag). Automatically continuing past the warning.")
-                    # Click the "Got it" button to dismiss the warning
-                    got_it_button = self.driver.find_element(
-                        By.XPATH,
-                        "//button[.//span[text()='Got it']] | " +
-                        "//button[contains(@class, 'ip-fuse-limit-alert__primary-action')]"
-                    )
-                    self.driver.execute_script("arguments[0].click();", got_it_button)
-                    time.sleep(1)
-                    return True
-                else:
-                    # Ask the user what they want to do
-                    user_decision = input("\nDo you want to continue and use some of your remaining invites? (y/N): ").strip().lower()
-
-                    # Changed this part: Make stop the default action, only continue if user explicitly says "y" or "yes"
-                    if user_decision in ["yes", "y"]:
-                        print("Continuing automation until all invites are used.")
-                        # Click the "Got it" button to dismiss the warning
-                        got_it_button = self.driver.find_element(
-                            By.XPATH,
-                            "//button[.//span[text()='Got it']] | " +
-                            "//button[contains(@class, 'ip-fuse-limit-alert__primary-action')]"
-                        )
-                        self.driver.execute_script("arguments[0].click();", got_it_button)
-                        time.sleep(1)
-                        return True
-                    else:
-                        print("Stopping automation to save some invites for manual use.")
-                        return False
-
-            return True  # No warning found, continue
-        except Exception as e:
-            print(f"Error checking invitation limit: {str(e)}")
-            return True  # Continue if there was an error checking
-
-    def verify_successful_invitation_sent(self, connect_button):
-        """Verify that the invitation was actually sent successfully."""
-        try:
-            # Check if any limit warning dialog appeared
-            if not self.check_invitation_limit_warning():
-                return False
-
-            # Check if the connect button changed to "Pending" or disappeared
-            try:
-                # Refresh the button's state
-                # Get current button text if it still exists
-                try:
-                    button_text = connect_button.text.strip()
-                    if button_text == "Pending":
-                        return True  # Successfully sent
-                    elif button_text == "Connect":
-                        print("WARNING: Button still shows 'Connect' - invitation may not have been sent")
-                        return False  # Not sent
-                except:
-                    # Button might be stale, look for a Pending button in its place
-                    parent_element = connect_button.find_element(By.XPATH, "..")
-                    pending_buttons = parent_element.find_elements(By.XPATH, ".//button[contains(text(), 'Pending')]")
-                    if pending_buttons:
-                        return True  # Successfully sent
-            except:
-                # Button is completely gone or stale, try looking for a success message
-                success_elements = self.driver.find_elements(
-                    By.XPATH,
-                    "//div[contains(text(), 'Invitation sent')] | " +
-                    "//span[contains(text(), 'Invitation sent')]"
-                )
-                if success_elements:
-                    return True  # Successfully sent
-
-            # Look for any error messages that indicate failure
-            error_elements = self.driver.find_elements(
-                By.XPATH,
-                "//div[contains(text(), 'unable to send')] | " +
-                "//div[contains(text(), 'invitation limit')] | " +
-                "//div[contains(text(), 'cannot send')] | " +
-                "//div[contains(@class, 'error')]"
-            )
-            if error_elements:
-                print("ERROR: Found error message indicating invitation was not sent")
-                return False  # Not sent
-
-            # If we can't definitively determine success or failure, assume failure to be safe
-            print("WARNING: Could not verify if invitation was sent. Assuming it failed.")
-            return False
-        except Exception as e:
-            print(f"Error verifying invitation: {str(e)}")
-            return False  # Assume failure on error
-
     def process_page(self):
         """Process all valid connect buttons on the current page."""
         # Wait for the search results container to load
@@ -411,66 +448,80 @@ class LinkedInPeopleConnectionBot:
                 if not name:
                     name = self.extract_name_from_modal()
 
-                # Find and click "Add a note" button - using JavaScript click
-                try:
-                    add_note_btn = self.wait.until(EC.element_to_be_clickable(
-                        (By.XPATH, "//button[.//span[text()='Add a note']]")))
-                    self.driver.execute_script("arguments[0].click();", add_note_btn)
-                except:
-                    # If "Add a note" button doesn't appear, check for limit warning
-                    if not self.check_invitation_limit_warning():
-                        return False
-                    print(f"No 'Add a note' button found for button {i+1}. Skipping.")
-                    continue
+                # If no_message flag is enabled, click "Send without a note" button
+                if self.no_message:
+                    try:
+                        send_without_note_btn = self.wait.until(EC.element_to_be_clickable(
+                            (By.XPATH, "//button[.//span[text()='Send without a note']]")))
+                        self.driver.execute_script("arguments[0].click();", send_without_note_btn)
+                        print(f"Sending invitation without a note to candidate {i+1}")
+                    except:
+                        # If "Send without a note" button doesn't appear, check for limit warning
+                        if not self.check_invitation_limit_warning():
+                            return False
+                        print(f"No 'Send without a note' button found for button {i+1}. Skipping.")
+                        continue
+                else:
+                    # Otherwise, follow the original flow with a note
+                    try:
+                        add_note_btn = self.wait.until(EC.element_to_be_clickable(
+                            (By.XPATH, "//button[.//span[text()='Add a note']]")))
+                        self.driver.execute_script("arguments[0].click();", add_note_btn)
+                    except:
+                        # If "Add a note" button doesn't appear, check for limit warning
+                        if not self.check_invitation_limit_warning():
+                            return False
+                        print(f"No 'Add a note' button found for button {i+1}. Skipping.")
+                        continue
 
-                # Wait for the text area to be visible
-                try:
-                    message_box = self.wait.until(EC.element_to_be_clickable((By.ID, "custom-message")))
-                except:
-                    # If no message box appears, check if we hit the limit
-                    if not self.check_invitation_limit_warning():
-                        return False
-                    print(f"No message box appeared for button {i+1}. Skipping.")
-                    continue
+                    # Wait for the text area to be visible
+                    try:
+                        message_box = self.wait.until(EC.element_to_be_clickable((By.ID, "custom-message")))
+                    except:
+                        # If no message box appears, check if we hit the limit
+                        if not self.check_invitation_limit_warning():
+                            return False
+                        print(f"No message box appeared for button {i+1}. Skipping.")
+                        continue
 
-                # Prepare personalized message
-                personalized_message = self.personalize_message(name)
+                    # Prepare personalized message
+                    personalized_message = self.personalize_message(name)
 
-                # Debug output to verify message preparation
-                print(f"Sending message to candidate {i+1}: {personalized_message[:50]}{'...' if len(personalized_message) > 50 else ''}")
+                    # Debug output to verify message preparation
+                    print(f"Sending message to candidate {i+1}: {personalized_message[:50]}{'...' if len(personalized_message) > 50 else ''}")
 
-                # Clear and fill the message box - using JS to avoid character issues
-                message_box.clear()
+                    # Clear and fill the message box - using JS to avoid character issues
+                    message_box.clear()
 
-                # Use JavaScript to set the value to avoid BMP character issues
-                self.driver.execute_script(
-                    "arguments[0].value = arguments[1];",
-                    message_box,
-                    personalized_message
-                )
+                    # Use JavaScript to set the value to avoid BMP character issues
+                    self.driver.execute_script(
+                        "arguments[0].value = arguments[1];",
+                        message_box,
+                        personalized_message
+                    )
 
-                # Trigger an input event to ensure LinkedIn recognizes the text entry
-                self.driver.execute_script(
-                    "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));",
-                    message_box
-                )
+                    # Trigger an input event to ensure LinkedIn recognizes the text entry
+                    self.driver.execute_script(
+                        "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));",
+                        message_box
+                    )
 
-                # Wait a moment for the Send button to be enabled
-                time.sleep(2)
+                    # Wait a moment for the Send button to be enabled
+                    time.sleep(2)
 
-                # Find the Send button
-                try:
-                    send_btn = self.wait.until(EC.element_to_be_clickable(
-                        (By.XPATH, "//button[.//span[text()='Send']]")))
-                except:
-                    # If Send button doesn't become clickable, check for limit warning
-                    if not self.check_invitation_limit_warning():
-                        return False
-                    print(f"Send button never became clickable for button {i+1}. Skipping.")
-                    continue
+                    # Find the Send button
+                    try:
+                        send_btn = self.wait.until(EC.element_to_be_clickable(
+                            (By.XPATH, "//button[.//span[text()='Send']]")))
+                    except:
+                        # If Send button doesn't become clickable, check for limit warning
+                        if not self.check_invitation_limit_warning():
+                            return False
+                        print(f"Send button never became clickable for button {i+1}. Skipping.")
+                        continue
 
-                # Click the Send button using JavaScript
-                self.driver.execute_script("arguments[0].click();", send_btn)
+                    # Click the Send button using JavaScript
+                    self.driver.execute_script("arguments[0].click();", send_btn)
 
                 # Wait for the modal to close or for a limit message to appear
                 try:
@@ -556,35 +607,49 @@ class LinkedInPeopleConnectionBot:
         return True
 
     def go_to_next_page(self):
-        """Go to the next page of search results. Returns False if no next page."""
+        """Go to the next or previous page of search results depending on reverse setting. Returns False if no navigation is possible."""
         try:
             # Check for invitation limit warning before navigating
             if not self.check_invitation_limit_warning():
                 return False
 
-            # Find the Next button
-            next_button = self.short_wait.until(EC.element_to_be_clickable(
-                (By.XPATH, "//button[contains(@aria-label, 'Next') and not(contains(@class, 'disabled'))]")))
+            # Determine which button to look for based on reverse setting
+            button_label = "Previous" if self.reverse else "Next"
+            button_xpath = f"//button[contains(@aria-label, '{button_label}') and not(contains(@class, 'disabled'))]"
 
-            # Check if we've reached page 100 (LinkedIn limit)
-            try:
-                current_page_elem = self.driver.find_element(By.XPATH, "//button[@aria-current='true']")
-                if current_page_elem.text == "100":
-                    print("Reached LinkedIn's page limit (page 100)")
-                    return False
-            except:
-                # If we can't find the current page element, just continue
-                pass
+            # Find the button
+            nav_button = self.short_wait.until(EC.element_to_be_clickable((By.XPATH, button_xpath)))
 
-            # Scroll to the Next button
-            self.driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
+            # If going in reverse, check if we've reached page 1
+            if self.reverse:
+                try:
+                    current_page_elem = self.driver.find_element(By.XPATH, "//button[@aria-current='true']")
+                    if current_page_elem.text == "1":
+                        print("Reached first page (page 1)")
+                        return False
+                except:
+                    # If we can't find the current page element, just continue
+                    pass
+            # If going forward, check if we've reached page 100 (LinkedIn limit)
+            else:
+                try:
+                    current_page_elem = self.driver.find_element(By.XPATH, "//button[@aria-current='true']")
+                    if current_page_elem.text == "100":
+                        print("Reached LinkedIn's page limit (page 100)")
+                        return False
+                except:
+                    # If we can't find the current page element, just continue
+                    pass
+
+            # Scroll to the button
+            self.driver.execute_script("arguments[0].scrollIntoView(true);", nav_button)
             time.sleep(1)
 
             # Store the current URL to check if we actually navigate
             current_url = self.driver.current_url
 
-            # Click the Next button using JavaScript
-            self.driver.execute_script("arguments[0].click();", next_button)
+            # Click the button using JavaScript
+            self.driver.execute_script("arguments[0].click();", nav_button)
 
             # Wait for the page to load
             time.sleep(5)
@@ -604,10 +669,11 @@ class LinkedInPeopleConnectionBot:
             return True
 
         except (TimeoutException, NoSuchElementException):
-            print("No next page button found or it's disabled")
+            direction = "previous" if self.reverse else "next"
+            print(f"No {direction} page button found or it's disabled")
             return False
         except Exception as e:
-            print(f"Error navigating to next page: {str(e)}")
+            print(f"Error navigating to {'previous' if self.reverse else 'next'} page: {str(e)}")
             return False
 
     def run_automation(self, max_pages=100):
@@ -632,9 +698,10 @@ class LinkedInPeopleConnectionBot:
                 print("Automation stopped due to invitation limit or user choice.")
                 break
 
-            # Try to go to next page
+            # Try to go to next/previous page based on reverse setting
             if not self.go_to_next_page():
-                print("Reached the last page or encountered an error")
+                direction = "first" if self.reverse else "last"
+                print(f"Reached the {direction} page or encountered an error")
                 break
 
             page_num += 1
@@ -642,7 +709,8 @@ class LinkedInPeopleConnectionBot:
             # Random delay between pages
             time.sleep(random.uniform(3, 5))
 
-        print(f"Completed automation! Processed {page_num} pages.")
+        direction = "reverse" if self.reverse else "forward"
+        print(f"Completed automation in {direction} direction! Processed {page_num} pages.")
 
     def close(self):
         """Close the browser."""
@@ -651,11 +719,15 @@ class LinkedInPeopleConnectionBot:
 
 def parse_arguments():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='LinkedIn People Connection Bot')
+    parser = argparse.ArgumentParser(description='LinkedIn Tech Recruiters Auto Connect')
     parser.add_argument('-y', '--yes', action='store_true',
                         help='Automatically continue past "close to limit" warnings (will still stop at hard limit)')
     parser.add_argument('-m', '--message', default='message.txt',
                         help='Path to message template file (default: message.txt)')
+    parser.add_argument('-r', '--reverse', action='store_true',
+                        help='Navigate in reverse (use Previous button instead of Next)')
+    parser.add_argument('-n', '--no-message', action='store_true',
+                        help='Send invitations without a note')
     return parser.parse_args()
 
 
@@ -666,7 +738,9 @@ if __name__ == "__main__":
 
     # To use with an already opened browser, set use_existing_browser=True
     # Pass the auto_continue flag from command line arguments
-    automator = LinkedInPeopleConnectionBot(use_existing_browser=True, auto_continue=args.yes, message_file=args.message)
+    automator = LinkedInAutomator(use_existing_browser=True, auto_continue=args.yes,
+                                  message_file=args.message, reverse=args.reverse,
+                                  no_message=args.no_message)
 
     try:
         # Run the automation

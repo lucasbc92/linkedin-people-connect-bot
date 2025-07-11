@@ -6,9 +6,11 @@ Uma ferramenta de automação em Python que ajuda você a se conectar com pessoa
 
 - 🚀 **Solicitações de Conexão Automatizadas**: Envia automaticamente solicitações de conexão para perfis com botões "Conectar"
 - 📝 **Mensagens Personalizadas**: Template de mensagem customizável com extração de nome para personalização
+- 🏃‍♂️ **Modo de Conexão Rápida**: Opção para enviar solicitações de conexão sem nota para processamento mais rápido
 - 🛡️ **Proteção contra Limite de Convites**: Detecta e gerencia automaticamente os limites de convite do LinkedIn
 - 👥 **Automação de Seguir**: Também segue perfis que têm botões "Seguir"
 - 🔄 **Navegação Multi-página**: Processa automaticamente múltiplas páginas de resultados de busca
+- 🔙 **Navegação Bidirecional**: Pode navegar para frente e para trás pelos resultados de busca
 - 🎯 **Segmentação Inteligente**: Funciona com resultados de busca do LinkedIn para segmentar perfis específicos
 - ⚡ **Suporte a Navegador Existente**: Pode funcionar com sua sessão do LinkedIn já aberta
 
@@ -73,12 +75,17 @@ O script abrirá uma nova janela do Chrome onde você precisará fazer login man
 
 - `-y`, `--yes`: Continua automaticamente além dos avisos de "próximo ao limite" (ainda para no limite máximo)
 - `-m`, `--message`: Caminho para o arquivo de template de mensagem (padrão: message.txt)
+- `-r`, `--reverse`: Navega em ordem reversa (usa o botão Anterior em vez de Próximo)
+- `-n`, `--no-message`: Envia convites sem uma nota (processamento mais rápido)
 
 Exemplos:
 ```bash
 python main.py -y
 python main.py -m custom_message.txt
-python main.py -y -m my_template.txt
+python main.py -r  # Navega em ordem reversa (dos resultados mais recentes para os mais antigos)
+python main.py -n  # Envia solicitações de conexão sem nota
+python main.py -y -m my_template.txt -r
+python main.py -y -n -r  # Continua automaticamente, sem notas, navegação reversa
 ```
 
 ## Customização de Mensagem
@@ -117,9 +124,11 @@ Espero que meu perfil desperte seu interesse!
 
 1. **Processamento de Página**: Escaneia a página atual em busca de botões "Conectar"
 2. **Extração de Nome**: Tenta extrair o nome do destinatário do perfil
-3. **Solicitação de Conexão**: Clica "Conectar" → "Adicionar nota" → preenche mensagem personalizada → envia
+3. **Solicitação de Conexão**:
+   - Com notas: Clica "Conectar" → "Adicionar nota" → preenche mensagem personalizada → envia
+   - Sem notas: Clica "Conectar" → "Enviar sem nota" (quando a flag `-n` é usada)
 4. **Seguindo**: Clica em qualquer botão "Seguir" na página
-5. **Navegação**: Move para a próxima página de resultados
+5. **Navegação**: Move para a próxima página (ou página anterior com a flag `-r`) de resultados
 6. **Repetir**: Continua até que todas as páginas sejam processadas ou limites sejam atingidos
 
 ## Melhores Práticas
@@ -135,17 +144,17 @@ Espero que meu perfil desperte seu interesse!
 ### Problemas Comuns
 
 1. **Problemas com ChromeDriver**:
-    - Certifique-se de que o navegador Chrome está instalado
-    - O script usa o gerenciamento integrado de ChromeDriver do selenium
+   - Certifique-se de que o navegador Chrome está instalado
+   - O script usa o gerenciamento integrado de ChromeDriver do selenium
 
 2. **Falhas de Conexão**:
-    - Verifique sua conexão com a internet
-    - Verifique se você está logado no LinkedIn
-    - Certifique-se de que a página de resultados de busca está carregada
+   - Verifique sua conexão com a internet
+   - Verifique se você está logado no LinkedIn
+   - Certifique-se de que a página de resultados de busca está carregada
 
 3. **Elemento Não Encontrado**:
-    - A interface do LinkedIn pode ter mudado
-    - Tente atualizar a página e executar novamente
+   - A interface do LinkedIn pode ter mudado
+   - Tente atualizar a página e executar novamente
 
 ### Modo de Depuração
 
