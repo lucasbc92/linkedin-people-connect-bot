@@ -1,6 +1,7 @@
-Olá, {name}!
-Sou um Dev Full Stack focado em back-end com experiência única: fintech (Luizalabs), agronegócio, segurança pública. Especialista em Java Spring, React e resolução de incidentes críticos.
+Oi, {name}!
+Trabalho há 7 anos como Dev Java Full Stack em Spring e React/Angular, de fintechs (Magalu, Cast Group) a fidelização (Vivo Valoriza).
+Desenvolvo com agentes de IA orientados por especificações formais de negócio.
+Busco um trabalho remoto. Vamos conectar? 😊
 
-Que tal uma conversa?
-Atenciosamente,
-Lucas.
+[]'s,
+Lucas
