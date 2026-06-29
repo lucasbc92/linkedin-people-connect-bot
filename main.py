@@ -13,6 +13,7 @@ import os
 import re
 import unicodedata
 import logging
+import ctypes
 
 
 logger = logging.getLogger("linkedin_bot")
@@ -26,6 +27,10 @@ INVITE_ENDPOINT_FRAGMENTS = (
     "voyagerRelationshipsDashMemberRelationships",
     "verifyQuotaAndCreate",
 )
+
+# Windows power management constants for sleep prevention
+_ES_CONTINUOUS = 0x80000000
+_ES_SYSTEM_REQUIRED = 0x00000001
 
 
 def setup_logging(level=logging.DEBUG, log_file=LOG_FILE):
@@ -147,6 +152,11 @@ class LinkedInAutomator:
 
         # Load message variations from file (skipped in no-message mode).
         self.message_templates = [] if no_message else self.load_message_templates(message_file)
+
+        # Session counters
+        self.connections_sent = 0
+        self.connections_failed = 0
+        self.connections_skipped = 0
 
     # A line made up of dashes (e.g. "---") separates one message variation from
     # the next inside the message file.
@@ -554,6 +564,20 @@ class LinkedInAutomator:
                 continue
         return messages
 
+    def _log_quota_from_invite_response(self, request_id, headers):
+        """Log any genuine rate-limit headers from a successful invite response.
+
+        As of 2026-06 LinkedIn's verifyQuotaAndCreate endpoint does NOT expose
+        remaining quota in its response — the body only contains the invitationUrn
+        and the headers are server-routing metadata (x-li-fabric, x-li-pop, etc.).
+        We keep this method so future changes to the API are caught automatically.
+        """
+        quota_headers = {k: v for k, v in headers.items()
+                         if any(kw in k.lower() for kw in
+                                ("ratelimit", "x-rate-limit", "quota", "remaining"))}
+        if quota_headers:
+            logger.info(f"[QUOTA] Invite endpoint quota headers found: {quota_headers}")
+
     def detect_rate_limit_429(self, wait=3.0):
         """Watch the browser's network traffic for an HTTP 429 on the invite call.
 
@@ -562,6 +586,7 @@ class LinkedInAutomator:
         no "limit reached" dialog appears. Because the response arrives a moment
         after the Send click, we poll the performance log for up to `wait`
         seconds. Returns True (and logs an error) if such a 429 is seen.
+        On successful responses we also peek at headers/body for quota info.
         """
         if not getattr(self, "perf_logging", False):
             return False
@@ -571,17 +596,22 @@ class LinkedInAutomator:
             for msg in self._drain_performance_logs():
                 if msg.get("method") != "Network.responseReceived":
                     continue
-                response = msg.get("params", {}).get("response", {})
-                if response.get("status") != 429:
-                    continue
+                params = msg.get("params", {})
+                response = params.get("response", {})
                 url = response.get("url", "")
-                if any(frag in url for frag in INVITE_ENDPOINT_FRAGMENTS):
+                if not any(frag in url for frag in INVITE_ENDPOINT_FRAGMENTS):
+                    continue
+                status = response.get("status")
+                if status == 429:
                     logger.error(
                         "HTTP 429 (Too Many Requests) from LinkedIn's invitation "
                         f"endpoint:\n    {url}\n"
                         "Your invite quota is exhausted - stopping automation so "
                         "you don't keep hammering the rate limit.")
                     return True
+                if status in (200, 201):
+                    self._log_quota_from_invite_response(
+                        params.get("requestId"), response.get("headers", {}))
             if time.time() >= end:
                 return False
             time.sleep(0.5)
@@ -944,6 +974,7 @@ class LinkedInAutomator:
                     if not self.check_invitation_limit_warning():
                         return False
                     logger.warning(f"No modal appeared when clicking Connect for {target_label}. Skipping.")
+                    self.connections_skipped += 1
                     continue
 
                 # Check again for limit reached after clicking connect
@@ -957,6 +988,7 @@ class LinkedInAutomator:
                     logger.warning(f"{target_label} requires an email to connect. Cancelling and skipping.")
                     self.dismiss_open_modal()
                     self.wait_modal_closed(shadow, timeout=3)
+                    self.connections_skipped += 1
                     time.sleep(random.uniform(1, 2))
                     continue
 
@@ -972,6 +1004,7 @@ class LinkedInAutomator:
                         if not self.check_invitation_limit_warning():
                             return False
                         logger.warning(f"No 'Send without a note' button found for {target_label}. Skipping.")
+                        self.connections_skipped += 1
                         continue
                     self._robust_click(send_without_note_btn, "Send without a note button")
                     logger.info(f"Sending invitation without a note to {name or target_label}")
@@ -983,6 +1016,7 @@ class LinkedInAutomator:
                         if not self.check_invitation_limit_warning():
                             return False
                         logger.warning(f"No 'Add a note' button found for {target_label}. Skipping.")
+                        self.connections_skipped += 1
                         continue
                     self._robust_click(add_note_btn, "Add a note button")
 
@@ -992,6 +1026,7 @@ class LinkedInAutomator:
                         if not self.check_invitation_limit_warning():
                             return False
                         logger.warning(f"No message box appeared for {target_label}. Skipping.")
+                        self.connections_skipped += 1
                         continue
 
                     # Prepare personalized message
@@ -1023,6 +1058,7 @@ class LinkedInAutomator:
                             return False
                         logger.warning(f"Send button never became clickable for {target_label} "
                               f"(note may not have registered). Skipping.")
+                        self.connections_skipped += 1
                         continue
 
                     # Scroll the Send button into view and click it (trusted click)
@@ -1050,13 +1086,21 @@ class LinkedInAutomator:
                 m = re.match(r"Invite\s+(.+?)\s+to connect", target_label)
                 full_name = m.group(1) if m else None
                 if self.verify_successful_invitation_sent(target_label, full_name):
-                    logger.info(f"Invitation sent to {name or target_label} ({len(processed_labels)} processed)")
+                    self.connections_sent += 1
+                    logger.info(
+                        f"Invitation sent to {name or target_label} "
+                        f"[sent={self.connections_sent}, failed={self.connections_failed}, "
+                        f"skipped={self.connections_skipped}]")
                 else:
                     # A limit dialog means we must stop; otherwise the invite simply
                     # didn't register for this person - log it and move on.
                     if not self.check_invitation_limit_warning():
                         return False
-                    logger.warning(f"Invite to {target_label} did not register; moving to next person")
+                    self.connections_failed += 1
+                    logger.warning(
+                        f"Invite to {target_label} did not register; moving to next person "
+                        f"[sent={self.connections_sent}, failed={self.connections_failed}, "
+                        f"skipped={self.connections_skipped}]")
 
                 # Random delay between invitations to appear more human-like
                 time.sleep(random.uniform(3, 5))
@@ -1229,38 +1273,69 @@ class LinkedInAutomator:
         """Run the full automation process."""
         page_num = 1
 
+        # Keep the PC awake for the entire run
+        self._prevent_sleep()
+
         # Make sure we're driving the tab that actually has the search results
         # (Selenium may attach to a different tab of an existing browser).
         self.select_search_tab()
 
-        while page_num <= max_pages:
-            logger.info(f"--- Processing page {page_num} ---")
+        try:
+            while page_num <= max_pages:
+                logger.info(f"--- Processing page {page_num} ---")
 
-            # Check for invitation limit warning before starting the page
-            if not self.check_invitation_limit_warning():
-                logger.info("Stopping automation due to invitation limit detection.")
-                break
+                # Check for invitation limit warning before starting the page
+                if not self.check_invitation_limit_warning():
+                    logger.info("Stopping automation due to invitation limit detection.")
+                    break
 
-            # Process Connect buttons only. People who can only be followed (no
-            # Connect button) are intentionally skipped - we only want real
-            # connection requests.
-            if not self.process_page():
-                logger.info("Automation stopped due to invitation limit or user choice.")
-                break
+                # Process Connect buttons only. People who can only be followed (no
+                # Connect button) are intentionally skipped - we only want real
+                # connection requests.
+                if not self.process_page():
+                    logger.info("Automation stopped due to invitation limit or user choice.")
+                    break
 
-            # Try to go to next/previous page based on reverse setting
-            if not self.go_to_next_page():
-                direction = "first" if self.reverse else "last"
-                logger.info(f"Reached the {direction} page or encountered an error")
-                break
+                # Try to go to next/previous page based on reverse setting
+                if not self.go_to_next_page():
+                    direction = "first" if self.reverse else "last"
+                    logger.info(f"Reached the {direction} page or encountered an error")
+                    break
 
-            page_num += 1
+                page_num += 1
 
-            # Random delay between pages
-            time.sleep(random.uniform(3, 5))
+                # Random delay between pages
+                time.sleep(random.uniform(3, 5))
+        finally:
+            self._allow_sleep()
 
         direction = "reverse" if self.reverse else "forward"
         logger.info(f"Completed automation in {direction} direction! Processed {page_num} pages.")
+        logger.info(
+            f"Session summary — sent: {self.connections_sent} | "
+            f"failed to register: {self.connections_failed} | "
+            f"skipped (email/modal issues): {self.connections_skipped}")
+
+    def _prevent_sleep(self):
+        """Tell Windows not to sleep or turn off the display while the bot runs."""
+        if sys.platform != "win32":
+            return
+        try:
+            ctypes.windll.kernel32.SetThreadExecutionState(
+                _ES_CONTINUOUS | _ES_SYSTEM_REQUIRED)
+            logger.info("Sleep prevention enabled — PC will stay awake during automation.")
+        except Exception as e:
+            logger.warning(f"Could not enable sleep prevention: {e}")
+
+    def _allow_sleep(self):
+        """Restore normal Windows sleep behaviour after the bot finishes."""
+        if sys.platform != "win32":
+            return
+        try:
+            ctypes.windll.kernel32.SetThreadExecutionState(_ES_CONTINUOUS)
+            logger.debug("Sleep prevention disabled — normal power settings restored.")
+        except Exception as e:
+            logger.debug(f"Could not restore sleep settings: {e}")
 
     def close(self):
         """Close the browser."""
